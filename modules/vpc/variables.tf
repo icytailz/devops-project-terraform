@@ -4,6 +4,23 @@ variable "create_vpc" {
     description = "Determine to create vpc or not"
 }
 
+variable "public_subnets" {
+    type = list(string)
+    default = []
+    description = "A list of public subnets inside the vpc"
+}
+
+variable "private_subnets" {
+    type = list(string)
+    default = []
+    description = "A list of private subnets inside the vpc"
+}
+
+variable "azs" {
+    description = "List of availability zones by name or id in the region"
+    type = list(string)
+    default = []
+}
 variable "name" {
     type = string
     default = ""
@@ -26,4 +43,20 @@ variable "vpc_tags" {
     type = map(string)
     default = {}
     description = "Additional tags for the vpc"
+}
+
+variable "secondary_cidr_blocks" {
+    type = list(string)
+    default = []
+    description = "Provides a resource to associate additional IPv4 CIDR blocks with a VPC"
+}
+
+variable "enable_dns_hostnames" {
+    type = bool
+    default = true
+}
+
+variable "enable_dns_support" {
+    type = bool
+    default = true
 }
