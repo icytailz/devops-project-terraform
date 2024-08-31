@@ -116,23 +116,23 @@ resource "aws_subnet" "private" {
     lookup(var.private_subnet_tags_per_az, element(var.azs, count.index),{})
   )
 }
-
+#There are as many rooting table as the number of NAT g gateway
 resource "aws_route_table" "private" {
   vpc_id = local.vpc_id
-  count = local.create_private_subnets ? local.num_public_route_tables : 0
+  count = local.creatre_private_subnets && local.max_subnet_length > 0 ? local.nat_gateway_count : 0
 
   tags = merge(
     {
-      "Name" = var.create_multiple_public_route_tables ? format("${var.name}-${var.public_subnet_suffix}-%s", element(var.azs, count.index),) : "${var.name}-${var.public_subnet_suffix}"
+      "Name" = var.single_nat_gateway ? "${var.name}-${var.private_subnet_suffix}" : format("${var.name}-${var.private_subnet_suffix}-%s", element(var.azs, count.index),) 
     },
     var.tags,
-    var.public_route_table_tags,
+    var.private_route_table_tags,
   )
 }
 
-resource "aws_route_table_association" "public" {
-  count = local.create_public_subnets ? local.len_public_subnets : 0
+resource "aws_route_table_association" "private" {
+  count = local.create_private_subnets ? local.len_private_subnets : 0
 
-  subnet_id = element(aws_subnet.public[*].id, count.index)
-  route_table_id = element(aws_route_table.public[*].id, var.create_multiple_public_route_tables ? count.index : 0)
+  subnet_id = element(aws_subnet.private[*].id, count.index)
+  route_table_id = element(aws_route_table.private[*].id, var.single_nat_gateway ? 0 : count.index)
 }
