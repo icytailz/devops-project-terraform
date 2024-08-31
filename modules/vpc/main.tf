@@ -4,6 +4,11 @@ locals {
   len_public_subnets = length(var.public_subnets)
   len_private_subnets = length(var.private_subnets)
 
+  max_subnet_length = max (
+    local.len_public_subnets,
+    local.len_private_subnets,
+  )
+
   #Use local.vpc_id to give a hint to Terraform that subnets should be deleted before secondary CIDR block can be free.
   vpc_id = try(aws_vpc_ipv4_cidr_block_association.this[0].vpc_id, aws_vpc.this[0].id, "")
 }
@@ -86,4 +91,48 @@ resource "aws_route" "public_internet_gateway" {
   timeouts {
     create = "5m"
   }
+}
+
+##################
+# Private Subnets #
+##################
+
+locals {
+  create_private_subnets = local.create_vpc && local.len_private_subnets > 0
+}
+
+resource "aws_subnet" "private" {
+  count = local.create_private_subnets && (local.len_private_subnets >= length(var.azs)) ? local.len_private_subnets : 0
+  vpc_id = local.vpc_id
+
+  tags = merge(
+    {
+      Name = try(
+        var.private_subnet_names[count.index], format("${var.name}-${var.private_subnet_suffix}-%s", element(var.azs, count.index))
+      )
+    },
+    var.tags,
+    var.private_subnet_tags,
+    lookup(var.private_subnet_tags_per_az, element(var.azs, count.index),{})
+  )
+}
+
+resource "aws_route_table" "private" {
+  vpc_id = local.vpc_id
+  count = local.create_private_subnets ? local.num_public_route_tables : 0
+
+  tags = merge(
+    {
+      "Name" = var.create_multiple_public_route_tables ? format("${var.name}-${var.public_subnet_suffix}-%s", element(var.azs, count.index),) : "${var.name}-${var.public_subnet_suffix}"
+    },
+    var.tags,
+    var.public_route_table_tags,
+  )
+}
+
+resource "aws_route_table_association" "public" {
+  count = local.create_public_subnets ? local.len_public_subnets : 0
+
+  subnet_id = element(aws_subnet.public[*].id, count.index)
+  route_table_id = element(aws_route_table.public[*].id, var.create_multiple_public_route_tables ? count.index : 0)
 }
