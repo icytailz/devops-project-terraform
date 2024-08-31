@@ -29,10 +29,36 @@ variable "public_subnet_tags_per_az" {
     default = {}
     description = "Additional tags for the public subnets where the primary key is the AZ"
 }
+
+#Private subnet
 variable "private_subnets" {
     type = list(string)
     default = []
     description = "A list of private subnets inside the vpc"
+}
+
+variable "private_subnet_names" {
+    type = list(string)
+    default = []
+    description = "Explicit values to use in the name tag on private subnets. If empty, Name tags are generated"
+}
+
+variable "private_subnet_suffix" {
+   type = string
+   default =   "private"
+   description = "Suffix to append to private subnets name"
+}
+
+variable "private_subnet_tags" { 
+    type = map(string)
+    default = {}
+    description = "Additional tags for the private subnets"
+}
+
+variable "private_route_table_tags" { 
+    type = map(string)
+    default = {}
+    description = "Additional tags foe the private route tables"
 }
 
 variable "create_multiple_public_route_tables" {

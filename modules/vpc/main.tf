@@ -136,3 +136,47 @@ resource "aws_route_table_association" "private" {
   subnet_id = element(aws_subnet.private[*].id, count.index)
   route_table_id = element(aws_route_table.private[*].id, var.single_nat_gateway ? 0 : count.index)
 }
+
+
+################
+# InternetGateway###
+################
+
+resource "aws_internet_gateway" "this" {
+  count = local.create_public_subnets && var.create_igw ? 1 : 0
+
+  vpc_id = local.vpc_id
+
+  tags = merge(
+    { "Name" = var.name },
+    var.tags,
+    vat.igw_tags,
+  )
+}
+
+#############
+## NAT Gateway ##
+###############
+
+locals {
+  nat_gateway_count = var.single_nat_gateway ? 1 : var.one_nat_gateway_per_az ? length
+  (var.azs) : local.max_subnet_length
+  nat_gateway_ips = var.reuse_nat_ips ? var.external_nat_ip_ids : aws_eip.nat[*].id
+}
+
+aws resource "aws_eip" "nat" {
+  count = local.create_vpc && var.enable_nat_gateway && !var.reuse_nat_ips ? local.nat_gateway_count : 0
+  domain = "vpc"
+  tags = merge (
+    {
+      "Name" = format(
+        "${var.name}-%s",
+        element(var.azs, var.single_nat_gateway ? 0 : count.index),
+      )
+    },
+    var.tags,
+    var.nat_eip_tags,
+  )
+  depends_on = [aws_internet_gateway.this]
+}
+
