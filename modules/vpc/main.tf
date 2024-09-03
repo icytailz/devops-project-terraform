@@ -25,7 +25,6 @@ resource "aws_vpc" "this" {
       var.tags,
       var.vpc_tags
     )
-    
 }
 
 resource "aws_vpc_ipv4_cidr_block_association" "this" {
@@ -45,6 +44,7 @@ locals {
 resource "aws_subnet" "public" {
   count = local.create_public_subnets && (local.len_public_subnets >= length(var.azs)) ? local.len_public_subnets : 0
   vpc_id = local.vpc_id
+  cidr_block = element(concat(var.public_subnets, [""]), count.index)
 
   tags = merge(
     {
@@ -104,6 +104,7 @@ locals {
 resource "aws_subnet" "private" {
   count = local.create_private_subnets && (local.len_private_subnets >= length(var.azs)) ? local.len_private_subnets : 0
   vpc_id = local.vpc_id
+  cidr_block = element(concat(var.private_subnets, [""]), count.index)
 
   tags = merge(
     {
@@ -119,7 +120,7 @@ resource "aws_subnet" "private" {
 #There are as many rooting table as the number of NAT g gateway
 resource "aws_route_table" "private" {
   vpc_id = local.vpc_id
-  count = local.creatre_private_subnets && local.max_subnet_length > 0 ? local.nat_gateway_count : 0
+  count = local.create_private_subnets && local.max_subnet_length > 0 ? local.nat_gateway_count : 0
 
   tags = merge(
     {
@@ -138,9 +139,9 @@ resource "aws_route_table_association" "private" {
 }
 
 
-################
-# InternetGateway###
-################
+######################
+## Internet Gateway ##
+######################
 
 resource "aws_internet_gateway" "this" {
   count = local.create_public_subnets && var.create_igw ? 1 : 0
@@ -150,21 +151,20 @@ resource "aws_internet_gateway" "this" {
   tags = merge(
     { "Name" = var.name },
     var.tags,
-    vat.igw_tags,
+    var.igw_tags,
   )
 }
 
-#############
+#################
 ## NAT Gateway ##
-###############
+#################
 
 locals {
-  nat_gateway_count = var.single_nat_gateway ? 1 : var.one_nat_gateway_per_az ? length
-  (var.azs) : local.max_subnet_length
+  nat_gateway_count = var.single_nat_gateway ? 1 : var.one_nat_gateway_per_az ? length(var.azs) : local.max_subnet_length
   nat_gateway_ips = var.reuse_nat_ips ? var.external_nat_ip_ids : aws_eip.nat[*].id
 }
 
-aws resource "aws_eip" "nat" {
+resource "aws_eip" "nat" {
   count = local.create_vpc && var.enable_nat_gateway && !var.reuse_nat_ips ? local.nat_gateway_count : 0
   domain = "vpc"
   tags = merge (
@@ -180,3 +180,41 @@ aws resource "aws_eip" "nat" {
   depends_on = [aws_internet_gateway.this]
 }
 
+resource "aws_nat_gateway" "this" {
+  count = local.create_vpc && var.enable_nat_gateway ? local.nat_gateway_count : 0
+
+  allocation_id = element(
+    local.nat_gateway_ips,
+    var.single_nat_gateway ? 0 : count.index
+  )
+  subnet_id = element(
+    aws_subnet.public[*].id,
+    var.single_nat_gateway ? 0 : count.index
+  )
+
+  tags = merge(
+    {
+      "Name" = format(
+        "${var.name}-%s",
+        element(var.azs, var.single_nat_gateway ? 0 : count.index),
+      )
+    },
+    var.tags,
+    var.nat_gateway_tags,
+  )
+
+  depends_on = [ aws_internet_gateway.this ]
+  
+}
+
+resource "aws_route" "private_nat_gateway" {
+  count = local.create_vpc && var.enable_nat_gateway ? local.nat_gateway_count : 0
+  route_table_id = element(aws_route_table.private[*].id, count.index)
+  destination_cidr_block = var.nat_gateway_destination_cidr_block
+  nat_gateway_id = element(aws_nat_gateway.this[*].id, count.index)
+
+  timeouts {
+    create = "5m"
+  }
+  
+}
