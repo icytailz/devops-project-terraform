@@ -188,3 +188,114 @@ variable "igw_tags" {
   type        = map(string)
   default     = {}
 }
+################################################################################
+# Database Subnets
+################################################################################
+
+variable "database_subnets" {
+  description = "A list of database subnets inside the VPC"
+  type        = list(string)
+  default     = []
+}
+
+variable "database_subnet_assign_ipv6_address_on_creation" {
+  description = "Specify true to indicate that network interfaces created in the specified subnet should be assigned an IPv6 address. Default is `false`"
+  type        = bool
+  default     = false
+}
+
+variable "database_subnet_enable_dns64" {
+  description = "Indicates whether DNS queries made to the Amazon-provided DNS Resolver in this subnet should return synthetic IPv6 addresses for IPv4-only destinations. Default: `true`"
+  type        = bool
+  default     = true
+}
+
+variable "database_subnet_enable_resource_name_dns_aaaa_record_on_launch" {
+  description = "Indicates whether to respond to DNS queries for instance hostnames with DNS AAAA records. Default: `true`"
+  type        = bool
+  default     = true
+}
+
+variable "database_subnet_enable_resource_name_dns_a_record_on_launch" {
+  description = "Indicates whether to respond to DNS queries for instance hostnames with DNS A records. Default: `false`"
+  type        = bool
+  default     = false
+}
+
+variable "database_subnet_ipv6_prefixes" {
+  description = "Assigns IPv6 database subnet id based on the Amazon provided /56 prefix base 10 integer (0-256). Must be of equal length to the corresponding IPv4 subnet list"
+  type        = list(string)
+  default     = []
+}
+
+variable "database_subnet_ipv6_native" {
+  description = "Indicates whether to create an IPv6-only subnet. Default: `false`"
+  type        = bool
+  default     = false
+}
+
+variable "database_subnet_private_dns_hostname_type_on_launch" {
+  description = "The type of hostnames to assign to instances in the subnet at launch. For IPv6-only subnets, an instance DNS name must be based on the instance ID. For dual-stack and IPv4-only subnets, you can specify whether DNS names use the instance IPv4 address or the instance ID. Valid values: `ip-name`, `resource-name`"
+  type        = string
+  default     = null
+}
+
+variable "database_subnet_names" {
+  description = "Explicit values to use in the Name tag on database subnets. If empty, Name tags are generated"
+  type        = list(string)
+  default     = []
+}
+
+variable "database_subnet_suffix" {
+  description = "Suffix to append to database subnets name"
+  type        = string
+  default     = "db"
+}
+
+variable "create_database_subnet_route_table" {
+  description = "Controls if separate route table for database should be created"
+  type        = bool
+  default     = false
+}
+
+variable "create_database_internet_gateway_route" {
+  description = "Controls if an internet gateway route for public database access should be created"
+  type        = bool
+  default     = false
+}
+
+variable "create_database_nat_gateway_route" {
+  description = "Controls if a nat gateway route should be created to give internet access to the database subnets"
+  type        = bool
+  default     = false
+}
+
+variable "database_route_table_tags" {
+  description = "Additional tags for the database route tables"
+  type        = map(string)
+  default     = {}
+}
+
+variable "database_subnet_tags" {
+  description = "Additional tags for the database subnets"
+  type        = map(string)
+  default     = {}
+}
+
+variable "create_database_subnet_group" {
+  description = "Controls if database subnet group should be created (n.b. database_subnets must also be set)"
+  type        = bool
+  default     = true
+}
+
+variable "database_subnet_group_name" {
+  description = "Name of database subnet group"
+  type        = string
+  default     = null
+}
+
+variable "database_subnet_group_tags" {
+  description = "Additional tags for the database subnet group"
+  type        = map(string)
+  default     = {}
+}
