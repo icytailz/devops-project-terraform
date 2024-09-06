@@ -22,7 +22,7 @@ provider "aws" {
 
 provider "aws" {
   region = local.region2
-  alias = "virginia2"
+  alias = "ohio"
 }
 
 provider "helm" {

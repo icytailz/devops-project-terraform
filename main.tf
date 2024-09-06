@@ -1,4 +1,7 @@
-data "aws_availability_zones" "available" {}
+data "aws_availability_zones" "virginia" {}
+data "aws_availability_zones" "ohio" {
+  provider = aws.ohio
+}
 data "aws_caller_identity" "current" {}
 data "aws_ecrpublic_authorization_token" "token" {
   provider = aws.virginia
@@ -7,10 +10,10 @@ data "aws_ecrpublic_authorization_token" "token" {
 locals {
   name   = "tf-created"
   region = "us-east-1"
-  region2 = "us-west-1"
+  region2 = "us-east-2"
 
   vpc_cidr = "10.0.0.0/16"
-  azs      = slice(data.aws_availability_zones.available.names, 0, 3)
+  azs      = slice(data.aws_availability_zones.virginia.names, 0, 3)
 
   engine = "postgres"
   engine_version = "14"
@@ -55,7 +58,7 @@ module "eks" {
   eks_managed_node_groups = {
     karpenter = {
       ami_type       = "AL2023_x86_64_STANDARD"
-      instance_types = ["m5.large"]
+      instance_types = ["t3.medium"]
 
       min_size     = 2
       max_size     = 3
@@ -182,13 +185,10 @@ resource "kubectl_manifest" "karpenter_node_pool" {
           requirements:
             - key: "karpenter.k8s.aws/instance-category"
               operator: In
-              values: ["c", "m", "r"]
+              values: ["m"]
             - key: "karpenter.k8s.aws/instance-cpu"
               operator: In
               values: ["4", "8"]
-            - key: "karpenter.k8s.aws/instance-hypervisor"
-              operator: In
-              values: ["nitro"]
             - key: "karpenter.k8s.aws/instance-generation"
               operator: Gt
               values: ["2"]
@@ -234,6 +234,31 @@ resource "kubectl_manifest" "karpenter_example_deployment" {
   depends_on = [
     helm_release.karpenter
   ]
+}
+
+
+###############################################
+# ArgoCD helm
+###############################################
+resource "helm_release" "argocd" {
+  depends_on = [ helm_release.karpenter ]
+  name       = "argocd"
+  repository = "https://argoproj.github.io/argo-helm"
+  chart      = "argo-cd"
+  version    = "7.5.2"
+
+  namespace = "argocd"
+  create_namespace = true
+
+  set {
+   name  = "server.service.type"
+   value = "LoadBalancer"
+  }
+  set {
+   name  = "server.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type"
+   value = "nlb"
+  }
+  
 }
 
 ################################################################################
@@ -297,13 +322,13 @@ module "vpc2" {
   version = "~> 5.0"
 
   providers = {
-    aws = aws.virginia2
+    aws = aws.ohio
   }
 
   name = local.name
   cidr = local.vpc_cidr
 
-  azs             = local.azs
+  azs             = slice(data.aws_availability_zones.ohio.names, 0, 3)
   private_subnets = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 4, k)]
   public_subnets  = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 48)]
   intra_subnets   = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 52)]
@@ -332,7 +357,7 @@ module "security_group_vpc2" {
   version = "~> 5.0"
 
   providers = {
-    aws = aws.virginia2
+    aws = aws.ohio
   }
 
   name = local.name
@@ -370,6 +395,7 @@ module "master_db" {
 
   db_name = "replicaPostgresql"
   username = "replica_postgresql"
+  manage_master_user_password = true
   port = local.port
 
   multi_az = true
@@ -400,7 +426,7 @@ module "kms" {
   tags = local.tags
 
   providers = {
-    aws = aws.virginia2
+    aws = aws.ohio
   }
 }
 
@@ -408,7 +434,7 @@ module "replica_db" {
   source = "terraform-aws-modules/rds/aws"
 
   providers = {
-    aws = aws.virginia2
+    aws = aws.ohio
   }
 
   identifier = "${local.name}-replica-db"
