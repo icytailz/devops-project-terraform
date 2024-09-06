@@ -185,15 +185,15 @@ resource "kubectl_manifest" "karpenter_node_pool" {
           requirements:
             - key: "karpenter.k8s.aws/instance-category"
               operator: In
-              values: ["m"]
+              values: ["t"]
             - key: "karpenter.k8s.aws/instance-cpu"
               operator: In
-              values: ["4", "8"]
+              values: ["2", "4"]
             - key: "karpenter.k8s.aws/instance-generation"
               operator: Gt
               values: ["2"]
       limits:
-        cpu: 1000
+        cpu: 20
       disruption:
         consolidationPolicy: WhenEmpty
         consolidateAfter: 30s
