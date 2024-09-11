@@ -120,6 +120,38 @@ resource "aws_route_table_association" "private" {
   
 }
 
+############
+# Bastion SG
+############
+resource "aws_security_group" "bastion" {
+  name = "${local.name}-bastion-sg"
+  vpc_id = aws_vpc.bastion-gitlab.id
+}
+resource "aws_vpc_security_group_ingress_rule" "bastion_ingress_allow_tls" {
+  ip_protocol = "tcp"
+  security_group_id = aws_security_group.bastion.id
+  cidr_ipv4 = aws_vpc.bastion-gitlab.cidr_block
+  from_port = 443
+  to_port = 443
+}
+resource "aws_vpc_security_group_ingress_rule" "bastion_ingress_allow_http" {
+  ip_protocol = "tcp"
+  security_group_id = aws_security_group.bastion.id
+  cidr_ipv4 = aws_vpc.bastion-gitlab.cidr_block
+  from_port = 80
+  to_port = 80
+}
+resource "aws_vpc_security_group_egress_rule" "allow_all_traffic_ipv4" {
+  security_group_id = aws_security_group.bastion.id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1" # semantically equivalent to all ports
+}
+resource "aws_vpc_security_group_egress_rule" "allow_all_traffic_ipv6" {
+  security_group_id = aws_security_group.bastion.id
+  cidr_ipv6         = "::/0"
+  ip_protocol       = "-1" # semantically equivalent to all ports
+}
+
 ################################################################################
 #bastion and gitlab EC2
 ################################################################################
@@ -156,6 +188,7 @@ resource "aws_instance" "gitlab" {
   ami = data.aws_ami.amz.id
   instance_type = "t3.xlarge"
   subnet_id = aws_subnet.bastion-gitlab-private.id
+  
 
   tags = {
     Name = "gitlab"
