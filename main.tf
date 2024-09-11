@@ -30,6 +30,138 @@ locals {
 }
 
 ################################################################################
+# VPC for bastion and gitlab
+################################################################################
+resource "aws_vpc" "bastion-gitlab" {
+  cidr_block = local.vpc_cidr
+  enable_dns_hostnames = true
+  enable_dns_support = true
+
+  tags = {
+    Name = local.name
+  }
+}
+
+resource "aws_internet_gateway" "bastion-gitlab-igw" {
+  vpc_id = aws_vpc.bastion-gitlab
+
+  tags = {
+    Name = "${local.name}-igw"
+  }
+}
+resource "aws_subnet" "bastion-gitlab-private" {
+  vpc_id = aws_vpc.bastion-gitlab.id
+  cidr_block = "10.0.1.0/24"
+  availability_zone = "us-west-1a"
+
+  tags = {
+    Name = "${local.name}-private"
+  }
+  
+}
+
+resource "aws_subnet" "bastion-gitlab-public" {
+  vpc_id = aws_vpc.bastion-gitlab
+  cidr_block = "10.0.2.0/24"
+  availability_zone = "us-west-1b"
+
+  tags = {
+    Name = "${local.name}-public"
+  }
+  
+}
+
+resource "aws_route_table" "bastion-gitlab-public" {
+  vpc_id = aws_vpc.bastion-gitlab
+
+  route = [ {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.bastion-gitlab-igw.id
+  } ]
+
+  tags = {
+    Name = "${local.name}-public-rt"
+  }
+  
+}
+
+resource "aws_route_table_association" "public" {
+  route_table_id = aws_route_table.bastion-gitlab-public.id
+  subnet_id = aws_subnet.bastion-gitlab-public.id
+}
+resource "aws_nat_gateway" "nat" {
+  subnet_id = aws_subnet.bastion-gitlab-public.id
+  allocation_id = aws_eip.nat.id
+  
+  tags = {
+    Name = "${local.name}-main-nat-gw"
+  }
+}
+resource "aws_eip" "nat" {
+  domain = "vpc"
+}
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.bastion-gitlab.id
+
+  route = [ {
+    cidr_block = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.nat.id
+  } ]
+
+  tags = {
+    Name = "${local.name}-private-route-table"
+  }
+  
+}
+
+resource "aws_route_table_association" "private" {
+  route_table_id = aws_route_table.private.id
+  subnet_id = aws_subnet.bastion-gitlab-private.id
+  
+}
+
+################################################################################
+#bastion and gitlab EC2
+################################################################################
+data "aws_ami" "amz" {
+  most_recent = true
+
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-2023.*-x86_64"]
+  }
+}
+
+resource "aws_eip" "bastion" {
+  domain = "vpc"
+}
+resource "aws_instance" "bastion" {
+  ami = data.aws_ami.amz.id
+  instance_type = "t3.medium"
+  subnet_id = aws_subnet.bastion-gitlab-public.id
+
+  tags = {
+    Name = "bastion"
+  }
+}
+resource "aws_eip_association" "bastion_eip_assoc" {
+  instance_id = aws_instance.bastion.id
+  allocation_id = aws_eip.bastion.id
+}
+
+
+resource "aws_instance" "gitlab" {
+  ami = data.aws_ami.amz.id
+  instance_type = "t3.xlarge"
+  subnet_id = aws_subnet.bastion-gitlab-private.id
+
+  tags = {
+    Name = "gitlab"
+  }
+}
+################################################################################
 # EKS Module
 ################################################################################
 
@@ -95,7 +227,6 @@ module "eks" {
 ################################################################################
 # Karpenter
 ################################################################################
-
 module "karpenter" {
   source = "terraform-aws-modules/eks/aws//modules/karpenter"
 
@@ -110,10 +241,8 @@ module "karpenter" {
   node_iam_role_additional_policies = {
     AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
   }
-
   tags = local.tags
 }
-
 module "karpenter_disabled" {
   source = "terraform-aws-modules/eks/aws//modules/karpenter"
 
@@ -379,94 +508,94 @@ module "security_group_vpc2" {
 ################################################################################
 # RDS Master DB
 ################################################################################
-module "master_db" {
-  source = "terraform-aws-modules/rds/aws"
+# module "master_db" {
+#   source = "terraform-aws-modules/rds/aws"
 
-  identifier = "${local.name}-master-db"
+#   identifier = "${local.name}-master-db"
 
-  engine = local.engine
-  engine_version = local.engine_version
-  family = local.family
-  major_engine_version = local.major_engine_version
-  instance_class = local.instance_class
+#   engine = local.engine
+#   engine_version = local.engine_version
+#   family = local.family
+#   major_engine_version = local.major_engine_version
+#   instance_class = local.instance_class
 
-  allocated_storage = local.allocated_storage
-  max_allocated_storage = local.max_allocated_storage
+#   allocated_storage = local.allocated_storage
+#   max_allocated_storage = local.max_allocated_storage
 
-  db_name = "replicaPostgresql"
-  username = "replica_postgresql"
-  manage_master_user_password = true
-  port = local.port
+#   db_name = "replicaPostgresql"
+#   username = "replica_postgresql"
+#   manage_master_user_password = true
+#   port = local.port
 
-  multi_az = true
-  db_subnet_group_name = module.vpc.database_subnet_group_name
-  vpc_security_group_ids = [module.security_group_vpc.security_group_id]
+#   multi_az = true
+#   db_subnet_group_name = module.vpc.database_subnet_group_name
+#   vpc_security_group_ids = [module.security_group_vpc.security_group_id]
 
-  enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
+#   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
 
-  backup_retention_period = 1
-  skip_final_snapshot = true
-  deletion_protection = false
+#   backup_retention_period = 1
+#   skip_final_snapshot = true
+#   deletion_protection = false
 
-  tags = local.tags
-}
+#   tags = local.tags
+# }
 
-################################################################################
-# Replica DB
-################################################################################
-module "kms" {
-  source = "terraform-aws-modules/kms/aws"
-  version = "~> 1.0"
-  description = "KMS key for cross region replica DB"
+# ################################################################################
+# # Replica DB
+# ################################################################################
+# module "kms" {
+#   source = "terraform-aws-modules/kms/aws"
+#   version = "~> 1.0"
+#   description = "KMS key for cross region replica DB"
 
-  aliases = [local.name]
-  aliases_use_name_prefix = true
+#   aliases = [local.name]
+#   aliases_use_name_prefix = true
 
-  key_owners = [data.aws_caller_identity.current.id]
-  tags = local.tags
+#   key_owners = [data.aws_caller_identity.current.id]
+#   tags = local.tags
 
-  providers = {
-    aws = aws.ohio
-  }
-}
+#   providers = {
+#     aws = aws.ohio
+#   }
+# }
 
-module "replica_db" {
-  source = "terraform-aws-modules/rds/aws"
+# module "replica_db" {
+#   source = "terraform-aws-modules/rds/aws"
 
-  providers = {
-    aws = aws.ohio
-  }
+#   providers = {
+#     aws = aws.ohio
+#   }
 
-  identifier = "${local.name}-replica-db"
+#   identifier = "${local.name}-replica-db"
 
-  replicate_source_db = module.master_db.db_instance_arn
+#   replicate_source_db = module.master_db.db_instance_arn
 
-  engine               = local.engine
-  engine_version       = local.engine_version
-  family               = local.family
-  major_engine_version = local.major_engine_version
-  instance_class       = local.instance_class
-  kms_key_id           = module.kms.key_arn
+#   engine               = local.engine
+#   engine_version       = local.engine_version
+#   family               = local.family
+#   major_engine_version = local.major_engine_version
+#   instance_class       = local.instance_class
+#   kms_key_id           = module.kms.key_arn
 
-  allocated_storage     = local.allocated_storage
-  max_allocated_storage = local.max_allocated_storage
+#   allocated_storage     = local.allocated_storage
+#   max_allocated_storage = local.max_allocated_storage
 
-  manage_master_user_password = false
+#   manage_master_user_password = false
 
-  port = local.port
+#   port = local.port
 
-  create_db_parameter_group = false
+#   create_db_parameter_group = false
   
-  multi_az = false
-  vpc_security_group_ids = [module.security_group_vpc2.security_group_id]
+#   multi_az = false
+#   vpc_security_group_ids = [module.security_group_vpc2.security_group_id]
 
-  enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
+#   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
 
-  backup_retention_period = 0
-  skip_final_snapshot = true
-  deletion_protection = false
+#   backup_retention_period = 0
+#   skip_final_snapshot = true
+#   deletion_protection = false
 
-  db_subnet_group_name = module.vpc2.database_subnet_group_name
+#   db_subnet_group_name = module.vpc2.database_subnet_group_name
 
-  tags = local.tags
-}
+#   tags = local.tags
+# }
