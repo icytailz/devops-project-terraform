@@ -128,16 +128,18 @@ resource "aws_security_group" "bastion" {
   vpc_id = aws_vpc.bastion-gitlab.id
 }
 resource "aws_vpc_security_group_ingress_rule" "bastion_ingress_allow_tls" {
+  for_each = toset(["14.238.34.230/32","27.122.137.92", aws_vpc.bastion-gitlab.cidr_block])
   ip_protocol = "tcp"
   security_group_id = aws_security_group.bastion.id
-  cidr_ipv4 = aws_vpc.bastion-gitlab.cidr_block
+  cidr_ipv4 = each.value
   from_port = 443
   to_port = 443
 }
 resource "aws_vpc_security_group_ingress_rule" "bastion_ingress_allow_http" {
+  for_each = toset(["14.238.34.230/32","27.122.137.92", aws_vpc.bastion-gitlab.cidr_block])
   ip_protocol = "tcp"
   security_group_id = aws_security_group.bastion.id
-  cidr_ipv4 = aws_vpc.bastion-gitlab.cidr_block
+  cidr_ipv4 = each.value
   from_port = 80
   to_port = 80
 }
@@ -148,6 +150,32 @@ resource "aws_vpc_security_group_egress_rule" "allow_all_traffic_ipv4" {
 }
 resource "aws_vpc_security_group_egress_rule" "allow_all_traffic_ipv6" {
   security_group_id = aws_security_group.bastion.id
+  cidr_ipv6         = "::/0"
+  ip_protocol       = "-1" # semantically equivalent to all ports
+}
+###########
+# Gitlab SG
+###########
+resource "aws_security_group" "gitlab" {
+  name = "${local.name}-gitlab-sg"
+  vpc_id = aws_vpc.bastion-gitlab.id
+}
+resource "aws_security_group_rule" "allow_from_bastion" {
+  from_port = 0
+  protocol = "-1"
+  security_group_id = aws_security_group.gitlab.id
+  source_security_group_id = aws_security_group.bastion.id
+  to_port = 0
+  type = "ingress"
+  
+}
+resource "aws_vpc_security_group_egress_rule" "gitlab_allow_all_traffic_ipv4" {
+  security_group_id = aws_security_group.gitlab.id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1" # semantically equivalent to all ports
+}
+resource "aws_vpc_security_group_egress_rule" "gitlab_allow_all_traffic_ipv6" {
+  security_group_id = aws_security_group.gitlab.id
   cidr_ipv6         = "::/0"
   ip_protocol       = "-1" # semantically equivalent to all ports
 }
@@ -173,7 +201,7 @@ resource "aws_instance" "bastion" {
   ami = data.aws_ami.amz.id
   instance_type = "t3.medium"
   subnet_id = aws_subnet.bastion-gitlab-public.id
-
+  vpc_security_group_ids = [ aws_security_group.bastion.id ]
   tags = {
     Name = "bastion"
   }
@@ -188,6 +216,7 @@ resource "aws_instance" "gitlab" {
   ami = data.aws_ami.amz.id
   instance_type = "t3.xlarge"
   subnet_id = aws_subnet.bastion-gitlab-private.id
+  vpc_security_group_ids = [ aws_security_group.gitlab.id]
   
 
   tags = {

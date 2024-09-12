@@ -494,3 +494,10 @@ output "karpenter_instance_profile_unique" {
 #   description = "Map of CloudWatch log groups created and their attributes"
 #   value       = module.replica_db.db_instance_cloudwatch_log_groups
 # }
+########################
+#Gitlab Basion EC2 
+########################
+output "bastion_server_public_ip" {
+  description = "The public ip of bastion server"
+  value = aws_eip.bastion.address
+}
