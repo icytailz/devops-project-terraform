@@ -24,7 +24,11 @@ provider "aws" {
   region = local.region2
   alias = "ohio"
 }
-
+provider "aws" {
+  region = local.region3
+  alias = "california"
+}
+provider "tls" {}
 provider "helm" {
   kubernetes {
     host                   = module.eks.cluster_endpoint

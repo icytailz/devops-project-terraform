@@ -2,6 +2,9 @@ data "aws_availability_zones" "virginia" {}
 data "aws_availability_zones" "ohio" {
   provider = aws.ohio
 }
+data "aws_availability_zones" "california" {
+  provider = aws.california
+}
 data "aws_caller_identity" "current" {}
 data "aws_ecrpublic_authorization_token" "token" {
   provider = aws.virginia
@@ -11,6 +14,7 @@ locals {
   name   = "tf-created"
   region = "us-east-1"
   region2 = "us-east-2"
+  region3 = "us-west-1"
 
   vpc_cidr = "10.0.0.0/16"
   azs      = slice(data.aws_availability_zones.virginia.names, 0, 3)
@@ -33,6 +37,7 @@ locals {
 # VPC for bastion and gitlab
 ################################################################################
 resource "aws_vpc" "bastion-gitlab" {
+  provider = aws.california
   cidr_block = local.vpc_cidr
   enable_dns_hostnames = true
   enable_dns_support = true
@@ -43,13 +48,15 @@ resource "aws_vpc" "bastion-gitlab" {
 }
 
 resource "aws_internet_gateway" "bastion-gitlab-igw" {
-  vpc_id = aws_vpc.bastion-gitlab
+  provider = aws.california
+  vpc_id = aws_vpc.bastion-gitlab.id
 
   tags = {
     Name = "${local.name}-igw"
   }
 }
 resource "aws_subnet" "bastion-gitlab-private" {
+  provider = aws.california
   vpc_id = aws_vpc.bastion-gitlab.id
   cidr_block = "10.0.1.0/24"
   availability_zone = "us-west-1a"
@@ -61,9 +68,10 @@ resource "aws_subnet" "bastion-gitlab-private" {
 }
 
 resource "aws_subnet" "bastion-gitlab-public" {
-  vpc_id = aws_vpc.bastion-gitlab
+  provider = aws.california
+  vpc_id = aws_vpc.bastion-gitlab.id
   cidr_block = "10.0.2.0/24"
-  availability_zone = "us-west-1b"
+  availability_zone = "us-west-1c"
 
   tags = {
     Name = "${local.name}-public"
@@ -72,12 +80,13 @@ resource "aws_subnet" "bastion-gitlab-public" {
 }
 
 resource "aws_route_table" "bastion-gitlab-public" {
-  vpc_id = aws_vpc.bastion-gitlab
+  provider = aws.california
+  vpc_id = aws_vpc.bastion-gitlab.id
 
-  route = [ {
+  route {
     cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.bastion-gitlab-igw.id
-  } ]
+  }
 
   tags = {
     Name = "${local.name}-public-rt"
@@ -86,10 +95,12 @@ resource "aws_route_table" "bastion-gitlab-public" {
 }
 
 resource "aws_route_table_association" "public" {
+  provider = aws.california
   route_table_id = aws_route_table.bastion-gitlab-public.id
   subnet_id = aws_subnet.bastion-gitlab-public.id
 }
 resource "aws_nat_gateway" "nat" {
+  provider = aws.california
   subnet_id = aws_subnet.bastion-gitlab-public.id
   allocation_id = aws_eip.nat.id
   
@@ -98,15 +109,17 @@ resource "aws_nat_gateway" "nat" {
   }
 }
 resource "aws_eip" "nat" {
+  provider = aws.california
   domain = "vpc"
 }
 resource "aws_route_table" "private" {
+  provider = aws.california
   vpc_id = aws_vpc.bastion-gitlab.id
 
-  route = [ {
+  route {
     cidr_block = "0.0.0.0/0"
     nat_gateway_id = aws_nat_gateway.nat.id
-  } ]
+  }
 
   tags = {
     Name = "${local.name}-private-route-table"
@@ -115,6 +128,7 @@ resource "aws_route_table" "private" {
 }
 
 resource "aws_route_table_association" "private" {
+  provider = aws.california
   route_table_id = aws_route_table.private.id
   subnet_id = aws_subnet.bastion-gitlab-private.id
   
@@ -124,11 +138,13 @@ resource "aws_route_table_association" "private" {
 # Bastion SG
 ############
 resource "aws_security_group" "bastion" {
+  provider = aws.california
   name = "${local.name}-bastion-sg"
   vpc_id = aws_vpc.bastion-gitlab.id
 }
 resource "aws_vpc_security_group_ingress_rule" "bastion_ingress_allow_tls" {
-  for_each = toset(["14.238.34.230/32","27.122.137.92", aws_vpc.bastion-gitlab.cidr_block])
+  provider = aws.california
+  for_each = toset(["14.238.34.230/32","27.122.137.92/32", aws_vpc.bastion-gitlab.cidr_block])
   ip_protocol = "tcp"
   security_group_id = aws_security_group.bastion.id
   cidr_ipv4 = each.value
@@ -136,7 +152,8 @@ resource "aws_vpc_security_group_ingress_rule" "bastion_ingress_allow_tls" {
   to_port = 443
 }
 resource "aws_vpc_security_group_ingress_rule" "bastion_ingress_allow_http" {
-  for_each = toset(["14.238.34.230/32","27.122.137.92", aws_vpc.bastion-gitlab.cidr_block])
+  provider = aws.california
+  for_each = toset(["14.238.34.230/32","27.122.137.92/32", aws_vpc.bastion-gitlab.cidr_block])
   ip_protocol = "tcp"
   security_group_id = aws_security_group.bastion.id
   cidr_ipv4 = each.value
@@ -144,11 +161,13 @@ resource "aws_vpc_security_group_ingress_rule" "bastion_ingress_allow_http" {
   to_port = 80
 }
 resource "aws_vpc_security_group_egress_rule" "allow_all_traffic_ipv4" {
+  provider = aws.california
   security_group_id = aws_security_group.bastion.id
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1" # semantically equivalent to all ports
 }
 resource "aws_vpc_security_group_egress_rule" "allow_all_traffic_ipv6" {
+  provider = aws.california
   security_group_id = aws_security_group.bastion.id
   cidr_ipv6         = "::/0"
   ip_protocol       = "-1" # semantically equivalent to all ports
@@ -157,10 +176,12 @@ resource "aws_vpc_security_group_egress_rule" "allow_all_traffic_ipv6" {
 # Gitlab SG
 ###########
 resource "aws_security_group" "gitlab" {
+  provider = aws.california
   name = "${local.name}-gitlab-sg"
   vpc_id = aws_vpc.bastion-gitlab.id
 }
 resource "aws_security_group_rule" "allow_from_bastion" {
+  provider = aws.california
   from_port = 0
   protocol = "-1"
   security_group_id = aws_security_group.gitlab.id
@@ -170,11 +191,13 @@ resource "aws_security_group_rule" "allow_from_bastion" {
   
 }
 resource "aws_vpc_security_group_egress_rule" "gitlab_allow_all_traffic_ipv4" {
+  provider = aws.california
   security_group_id = aws_security_group.gitlab.id
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1" # semantically equivalent to all ports
 }
 resource "aws_vpc_security_group_egress_rule" "gitlab_allow_all_traffic_ipv6" {
+  provider = aws.california
   security_group_id = aws_security_group.gitlab.id
   cidr_ipv6         = "::/0"
   ip_protocol       = "-1" # semantically equivalent to all ports
@@ -184,6 +207,7 @@ resource "aws_vpc_security_group_egress_rule" "gitlab_allow_all_traffic_ipv6" {
 #bastion and gitlab EC2
 ################################################################################
 data "aws_ami" "amz" {
+  provider = aws.california
   most_recent = true
 
   owners      = ["amazon"]
@@ -193,32 +217,46 @@ data "aws_ami" "amz" {
     values = ["al2023-ami-2023.*-x86_64"]
   }
 }
+##SSH Key pair
+resource "tls_private_key" "ssh_key" {
+  algorithm = "RSA"
+  rsa_bits = 2048
+}
 
 resource "aws_eip" "bastion" {
+  provider = aws.california
   domain = "vpc"
 }
+resource "aws_key_pair" "this" {
+  provider = aws.california
+  public_key = tls_private_key.ssh_key.public_key_openssh
+  key_name = "server-key"
+}
 resource "aws_instance" "bastion" {
+  provider = aws.california
   ami = data.aws_ami.amz.id
   instance_type = "t3.medium"
   subnet_id = aws_subnet.bastion-gitlab-public.id
   vpc_security_group_ids = [ aws_security_group.bastion.id ]
+  key_name = aws_key_pair.this.key_name
   tags = {
     Name = "bastion"
   }
 }
 resource "aws_eip_association" "bastion_eip_assoc" {
+  provider = aws.california
   instance_id = aws_instance.bastion.id
   allocation_id = aws_eip.bastion.id
 }
 
 
 resource "aws_instance" "gitlab" {
+  provider = aws.california
   ami = data.aws_ami.amz.id
   instance_type = "t3.xlarge"
   subnet_id = aws_subnet.bastion-gitlab-private.id
   vpc_security_group_ids = [ aws_security_group.gitlab.id]
-  
-
+  key_name = aws_key_pair.this.key_name
   tags = {
     Name = "gitlab"
   }
@@ -431,26 +469,26 @@ resource "kubectl_manifest" "karpenter_example_deployment" {
 ###############################################
 # ArgoCD helm
 ###############################################
-resource "helm_release" "argocd" {
-  depends_on = [ helm_release.karpenter ]
-  name       = "argocd"
-  repository = "https://argoproj.github.io/argo-helm"
-  chart      = "argo-cd"
-  version    = "7.5.2"
+# resource "helm_release" "argocd" {
+#   depends_on = [ helm_release.karpenter, module.karpenter ]
+#   name       = "argocd"
+#   repository = "https://argoproj.github.io/argo-helm"
+#   chart      = "argo-cd"
+#   version    = "7.5.2"
 
-  namespace = "argocd"
-  create_namespace = true
+#   namespace = "argocd"
+#   create_namespace = true
 
-  set {
-   name  = "server.service.type"
-   value = "LoadBalancer"
-  }
-  set {
-   name  = "server.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type"
-   value = "nlb"
-  }
+  # set {
+  #  name  = "server.service.type"
+  #  value = "LoadBalancer"
+  # }
+  # set {
+  #  name  = "server.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type"
+  #  value = "nlb"
+  # }
   
-}
+# }
 
 ################################################################################
 # Supporting Resources
