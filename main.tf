@@ -147,18 +147,18 @@ resource "aws_vpc_security_group_ingress_rule" "bastion_ingress_allow_tls" {
   ip_protocol = "tcp"
   security_group_id = aws_security_group.bastion.id
   cidr_ipv4 = each.value
-  from_port = 443
-  to_port = 443
+  from_port = 22
+  to_port = 22
 }
-resource "aws_vpc_security_group_ingress_rule" "bastion_ingress_allow_http" {
-  provider = aws.california
-  for_each = toset(["14.238.34.230/32","27.122.137.92/32", aws_vpc.bastion-gitlab.cidr_block])
-  ip_protocol = "tcp"
-  security_group_id = aws_security_group.bastion.id
-  cidr_ipv4 = each.value
-  from_port = 80
-  to_port = 80
-}
+# resource "aws_vpc_security_group_ingress_rule" "bastion_ingress_allow_http" {
+#   provider = aws.california
+#   for_each = toset(["14.238.34.230/32","27.122.137.92/32", aws_vpc.bastion-gitlab.cidr_block])
+#   ip_protocol = "tcp"
+#   security_group_id = aws_security_group.bastion.id
+#   cidr_ipv4 = each.value
+#   from_port = 80
+#   to_port = 80
+# }
 resource "aws_vpc_security_group_egress_rule" "allow_all_traffic_ipv4" {
   provider = aws.california
   security_group_id = aws_security_group.bastion.id
@@ -235,6 +235,10 @@ resource "aws_instance" "bastion" {
   vpc_security_group_ids = [ aws_security_group.bastion.id ]
   key_name = aws_key_pair.this.key_name
   user_data = "${file("init-bastion.sh")}"
+  provisioner "file" {
+    destination = "/home/ec2-user/.kube/config"
+    source = "./kubeconfig.yaml"
+  }
   tags = {
     Name = "bastion"
   }
@@ -324,7 +328,8 @@ resource "local_file" "kubeconfig" {
   depends_on = [ module.eks ]
   content = templatefile("${path.module}/kubeconfig.tpl", {
     cluster_endpoint   = module.eks.cluster_endpoint
-    cluster_name       = module.eks.cluster_name
+    cluster_arn       = module.eks.cluster_arn
+    cluster_name      = module.eks.cluster_name
     cluster_ca_data    = module.eks.cluster_certificate_authority_data
     region             = local.region
   })

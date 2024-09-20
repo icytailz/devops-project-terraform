@@ -497,14 +497,11 @@ output "karpenter_instance_profile_unique" {
 ########################
 #Gitlab Basion EC2 
 ########################
-output "public_key" {
-  value = tls_private_key.ssh_key.public_key_openssh
-}
-output "private_key" {
-  value = tls_private_key.ssh_key.private_key_pem
-  sensitive = true
-}
 output "bastion_server_public_ip" {
   description = "The public ip of bastion server"
-  value = aws_eip.bastion.address
+  value = aws_eip.bastion.public_ip
+}
+output "gitlab_server_private_ip" {
+  description = "The private ip of gitlab server"
+  value = aws_eip.gitlab.private_ip
 }
