@@ -131,7 +131,6 @@ resource "aws_route_table_association" "private" {
   provider = aws.california
   route_table_id = aws_route_table.private.id
   subnet_id = aws_subnet.bastion-gitlab-private.id
-  
 }
 
 ############
@@ -217,11 +216,7 @@ data "aws_ami" "amz" {
     values = ["al2023-ami-2023.*-x86_64"]
   }
 }
-##SSH Key pair
-resource "tls_private_key" "ssh_key" {
-  algorithm = "RSA"
-  rsa_bits = 2048
-}
+
 
 resource "aws_eip" "bastion" {
   provider = aws.california
@@ -229,8 +224,8 @@ resource "aws_eip" "bastion" {
 }
 resource "aws_key_pair" "this" {
   provider = aws.california
-  public_key = tls_private_key.ssh_key.public_key_openssh
-  key_name = "server-key"
+  public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDHyMEv4wpTKmupcieV5nJp5E5KUVEn9VujkcRYH1mIPWYBjW/mSusOVpewWsLAa4XsXgg3lArGeDktUrVXuseiRBjY/eH//W1fDd1xLJvHVQhnHrmiFwDsjTvFOhkttdTYreNSn7IOmgdBOE6FtUourloRtHsL1bKSNbLhHSdyQ11kU+rslLC+ZFG2t73/kpIBVnRVQvKHvRBGXa72QoQH3XFU4hhtQq6mhEtC9koPha7+TS/VF5WLcvGLUByQBis7jeHGit22b/2vyseB4CBMpXDgoHiqFkok4xAnj4iV8AWjA+GXiFAwP6FZ/GicFkDkDme5TKeuByyE0H6x6WMtEyM+NYoMdecnSMuVIXuDezjBUU3kY6i5HfEkvcjgEKI3IpO5WJv4V7otIJzHZ1XMCbArhZKpTjBobFaipYb5Lg7lbIL/ILFnCi9Hp8pS7AktrIRwZHEMirtlzYKHOFJfstP3vd+CwRgnpwfnCY5M0Gl7a70Ubys/vXr/xn3VHZs= ubuntu@LCSDEV1A4518"
+  key_name = "bastion-server-key"
 }
 resource "aws_instance" "bastion" {
   provider = aws.california
@@ -239,6 +234,7 @@ resource "aws_instance" "bastion" {
   subnet_id = aws_subnet.bastion-gitlab-public.id
   vpc_security_group_ids = [ aws_security_group.bastion.id ]
   key_name = aws_key_pair.this.key_name
+  user_data = "${file("init-bastion.sh")}"
   tags = {
     Name = "bastion"
   }
@@ -257,6 +253,7 @@ resource "aws_instance" "gitlab" {
   subnet_id = aws_subnet.bastion-gitlab-private.id
   vpc_security_group_ids = [ aws_security_group.gitlab.id]
   key_name = aws_key_pair.this.key_name
+  user_data = "${file("init-gitlab.sh")}"
   tags = {
     Name = "gitlab"
   }
@@ -323,7 +320,16 @@ module "eks" {
 
   tags = local.tags
 }
-
+resource "local_file" "kubeconfig" {
+  depends_on = [ module.eks ]
+  content = templatefile("${path.module}/kubeconfig.tpl", {
+    cluster_endpoint   = module.eks.cluster_endpoint
+    cluster_name       = module.eks.cluster_name
+    cluster_ca_data    = module.eks.cluster_certificate_authority_data
+    region             = local.region
+  })
+  filename = "${path.module}/kubeconfig.yaml"
+}
 ################################################################################
 # Karpenter
 ################################################################################
