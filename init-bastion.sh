@@ -5,4 +5,3 @@ chmod +x kubectl
 mv kubectl /usr/local/bin/
 
 echo "Update kube config"
-aws eks update-kubeconfig --region us-east-1 --name tf-created

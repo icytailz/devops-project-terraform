@@ -187,7 +187,6 @@ resource "aws_security_group_rule" "allow_from_bastion" {
   source_security_group_id = aws_security_group.bastion.id
   to_port = 0
   type = "ingress"
-  
 }
 resource "aws_vpc_security_group_egress_rule" "gitlab_allow_all_traffic_ipv4" {
   provider = aws.california
@@ -216,8 +215,6 @@ data "aws_ami" "amz" {
     values = ["al2023-ami-2023.*-x86_64"]
   }
 }
-
-
 resource "aws_eip" "bastion" {
   provider = aws.california
   domain = "vpc"
@@ -228,19 +225,61 @@ resource "aws_key_pair" "this" {
   key_name = "bastion-server-key"
 }
 resource "aws_instance" "bastion" {
+  depends_on = [ module.eks ]
   provider = aws.california
   ami = data.aws_ami.amz.id
   instance_type = "t3.medium"
   subnet_id = aws_subnet.bastion-gitlab-public.id
   vpc_security_group_ids = [ aws_security_group.bastion.id ]
+  iam_instance_profile = aws_iam_instance_profile.eks_instance_profile.name
   key_name = aws_key_pair.this.key_name
   user_data = "${file("init-bastion.sh")}"
-  provisioner "file" {
-    destination = "/home/ec2-user/.kube/config"
-    source = "./kubeconfig.yaml"
-  }
   tags = {
     Name = "bastion"
+  }
+}
+
+#Create eks access role
+resource "aws_iam_role" "eks_access_role" {
+  name = "ec2-eks-access-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "ec2.amazonaws.com"
+      }
+    }]
+  })
+}
+#Create eks access policy
+resource "aws_iam_policy" "eks_access_policy" {
+  name        = "eks-access-policy"
+  description = "Policy to provide EC2 access to EKS"
+
+  policy = file("ec2-eks-access-policy.json")
+}
+resource "aws_iam_role_policy_attachment" "eks_access_attachment" {
+  role       = aws_iam_role.eks_access_role.name
+  policy_arn = aws_iam_policy.eks_access_policy.arn
+}
+resource "aws_iam_instance_profile" "eks_instance_profile" {
+  name = "eks-instance-profile"
+  role = aws_iam_role.eks_access_role.name
+}
+resource "null_resource" "copy_file" {
+  depends_on = [ aws_eip_association.bastion_eip_assoc ]
+  provisioner "file" {
+    destination = "/home/ec2-user/"
+    source = "./.kube/config"
+  }
+  connection {
+    type        = "ssh"
+    host        = aws_eip.bastion.public_ip
+    user        = "ec2-user"
+    private_key = "${file("C:\\Users\\63200295\\.ssh\\bastion-server-key")}"
   }
 }
 resource "aws_eip_association" "bastion_eip_assoc" {
@@ -265,7 +304,18 @@ resource "aws_instance" "gitlab" {
 ################################################################################
 # EKS Module
 ################################################################################
-
+resource "aws_security_group" "eks_additional_sg" {
+  name = "${local.name}-eks-additional-sg"
+  vpc_id = module.vpc.vpc_id
+}
+resource "aws_security_group_rule" "allow_bastion_to_eks" {
+  from_port = 0
+  protocol = "-1"
+  security_group_id = aws_security_group.eks_additional_sg.id
+  source_security_group_id = aws_security_group.bastion.id
+  to_port = 0
+  type = "ingress"
+}
 module "eks" {
   source = "terraform-aws-modules/eks/aws"
 
@@ -276,7 +326,8 @@ module "eks" {
   # allow deploying resources (Karpenter) into the cluster
   enable_cluster_creator_admin_permissions = true
   cluster_endpoint_public_access           = true
-
+  cluster_endpoint_private_access          = true
+  cluster_additional_security_group_ids    = [ aws_security_group.eks_additional_sg.id ]
   cluster_addons = {
     coredns                = {}
     eks-pod-identity-agent = {}
@@ -333,7 +384,7 @@ resource "local_file" "kubeconfig" {
     cluster_ca_data    = module.eks.cluster_certificate_authority_data
     region             = local.region
   })
-  filename = "${path.module}/kubeconfig.yaml"
+  filename = "${path.module}/.kube/config"
 }
 ################################################################################
 # Karpenter
