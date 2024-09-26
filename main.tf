@@ -292,7 +292,7 @@ resource "aws_eip_association" "bastion_eip_assoc" {
 resource "aws_instance" "gitlab" {
   provider = aws.california
   ami = data.aws_ami.amz.id
-  instance_type = "t3.xlarge"
+  instance_type = "t3.large"
   subnet_id = aws_subnet.bastion-gitlab-private.id
   vpc_security_group_ids = [ aws_security_group.gitlab.id]
   key_name = aws_key_pair.this.key_name
@@ -527,31 +527,6 @@ resource "kubectl_manifest" "karpenter_example_deployment" {
   ]
 }
 
-
-###############################################
-# ArgoCD helm
-###############################################
-# resource "helm_release" "argocd" {
-#   depends_on = [ helm_release.karpenter, module.karpenter ]
-#   name       = "argocd"
-#   repository = "https://argoproj.github.io/argo-helm"
-#   chart      = "argo-cd"
-#   version    = "7.5.2"
-
-#   namespace = "argocd"
-#   create_namespace = true
-
-  # set {
-  #  name  = "server.service.type"
-  #  value = "LoadBalancer"
-  # }
-  # set {
-  #  name  = "server.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type"
-  #  value = "nlb"
-  # }
-  
-# }
-
 ################################################################################
 # Supporting Resources
 ################################################################################
@@ -666,6 +641,27 @@ module "security_group_vpc2" {
   ]
 
   tags = local.tags
+}
+
+#####################################################
+#Transit gateway
+#####################################################
+resource "aws_ec2_transit_gateway" "this" {
+  description = "bastion eks transit gateway"
+  auto_accept_shared_attachments = "enable"
+  default_route_table_association = "enable"
+}
+resource "aws_ec2_transit_gateway_vpc_attachment" "bastion-vpc-attachment" {
+  provider = aws.california
+  subnet_ids = [aws_subnet.bastion-gitlab-public.id]
+  transit_gateway_id = aws_ec2_transit_gateway.this.id
+  vpc_id = aws_vpc.bastion-gitlab.id
+}
+resource "aws_ec2_transit_gateway_vpc_attachment" "eks-vpc-attachment" {
+  count = length(module.vpc.private_subnets)
+  subnet_ids = [ module.vpc.private_subnets[count.index] ]
+  transit_gateway_id = aws_ec2_transit_gateway.this.id
+  vpc_id = module.vpc.vpc_id
 }
 ################################################################################
 # RDS Master DB
